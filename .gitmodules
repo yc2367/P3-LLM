@@ -3,5 +3,5 @@
 	url = https://github.com/EleutherAI/lm-evaluation-harness.git
 [submodule "3rdparty/llm-awq"]
 	path = 3rdparty/llm-awq
-	url = https://github.com/yc2367/P2-LLM.git
+	url = https://github.com/yc2367/P3-LLM.git
 	branch = tinychat_1.5
