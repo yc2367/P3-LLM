@@ -1,7 +1,7 @@
 #!/bin/bash
 
 ########## Modify the path according to your HOME directory ##########
-HOME_DIR="/home/yc2367/llm/P2-LLM/wkvaq_quant"
+HOME_DIR="/home/yc2367/llm/P3-LLM/wkvaq_quant"
 AWQ_DIR="/share/abdelfattah/temp_yc2367/awq_quant_model"
 ######################################################################
 
@@ -16,7 +16,7 @@ v_bits_list=(4)
 k_group_size_list=(128)
 v_group_size_list=(128)
 
-p_bits_list=(8 12 16)
+p_bits_list=(8 16)
 
 w_bits_list=(4)
 w_group_size_list=(128)
