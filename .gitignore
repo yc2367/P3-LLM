@@ -197,7 +197,9 @@ cython_debug/
 # Added by Yuzong Chen (yc2367@cornell.edu)
 sbatch/
 data_cache/
-scripts/
+scripts_template/
 output/
 results*/
 *.png
+*.pt
+plot_kv/
