@@ -19,6 +19,7 @@ Go to `wkvaq_quant/scripts/test_ppl_template.sh` and run Wikitext-2 and C4 perpl
 
 Change different quantization parameters by refering to their definition in `wkvaq_quant/utils.py`. Specifically, 
 - `--kv_quant_method`: "KTVT" by default, which adopts per-token head KV-cache quantization. It can also take "KCVT", which uses per-channel key quantization as described [here](https://arxiv.org/abs/2402.02750).
+- `--kv_residual_len`: Number of most recent tokens that are maintained in FP16 during KV-cache quantization. By default, this is 1, i.e., all KV-cache is quantized. Setting to a higher value will result in better accuracy.
 - `--apply_k_scale`: If set, then use our proposed dynamic per-channel key-cache smoothing. 
 - `--k_quant_post_rope`: If set, then quantize key cache after RoPE, else quantize key cache before RoPE.
 - `--p_bits`: the precision of attention score.
