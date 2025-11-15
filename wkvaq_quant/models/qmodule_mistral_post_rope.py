@@ -244,7 +244,7 @@ class QuantMistralAttention(nn.Module):
                 ######################################## Q x K.T ########################################
                 # Fuse query quantization with per-channel key smoothing
                 if self.apply_k_scale and (not self.apply_k_bias):
-                    query_states_scaled = query_states * repeat_kv(key_quant_scale, self.num_key_value_groups)
+                    query_states_scaled = query_states * key_quant_scale
                 else:
                     query_states_scaled = query_states
                 query_states_quant = q_quant_function(query_states_scaled, self.quant_config)
@@ -468,13 +468,22 @@ class QuantMistralAttention(nn.Module):
                         f"Wrong key_states_float_len !"
                 
                 ######################################## Q x K.T ########################################
-                if key_states_quant is None:
-                    key_states_full = key_states_float
+                # Fuse query quantization with per-channel key smoothing
+                if self.apply_k_scale and (not self.apply_k_bias):
+                    query_states_scaled = query_states * repeat_kv(key_quant_scale, self.num_key_value_groups)
                 else:
-                    key_states_full = torch.cat([key_states_quant, key_states_float], dim=2)
+                    query_states_scaled = query_states
+                query_states_quant = q_quant_function(query_states_scaled, self.quant_config)
 
-                key_states_full = repeat_kv(key_states_full, self.num_key_value_groups)
-                attn_weights = torch.matmul(query_states, key_states_full.transpose(2, 3)) / math.sqrt(self.head_dim)
+                if key_states_quant is None:
+                    attn_weights_quant = None
+                    attn_weights_float = torch.matmul(query_states, repeat_kv(key_states_float, self.num_key_value_groups).transpose(2, 3)) / math.sqrt(self.head_dim)
+                    attn_weights = attn_weights_float
+                else:
+                    attn_weights_quant = torch.matmul(query_states_quant, repeat_kv(key_states_quant, self.num_key_value_groups).transpose(2, 3)) / math.sqrt(self.head_dim)
+                    attn_weights_float = torch.matmul(query_states, repeat_kv(key_states_float, self.num_key_value_groups).transpose(2, 3)) / math.sqrt(self.head_dim)
+                    attn_weights = torch.cat([attn_weights_quant, attn_weights_float], dim=-1)
+                    
                 if attn_weights.size() != (bsz, self.num_heads, q_len, kv_seq_len):
                     raise ValueError(
                         f"Attention weights should be of size {(bsz, self.num_heads, q_len, kv_seq_len)}, but is"
