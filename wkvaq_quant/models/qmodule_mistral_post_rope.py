@@ -244,7 +244,7 @@ class QuantMistralAttention(nn.Module):
                 ######################################## Q x K.T ########################################
                 # Fuse query quantization with per-channel key smoothing
                 if self.apply_k_scale and (not self.apply_k_bias):
-                    query_states_scaled = query_states * key_quant_scale
+                    query_states_scaled = query_states * repeat_kv(key_quant_scale, self.num_key_value_groups)
                 else:
                     query_states_scaled = query_states
                 query_states_quant = q_quant_function(query_states_scaled, self.quant_config)
