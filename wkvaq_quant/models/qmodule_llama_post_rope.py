@@ -16,10 +16,15 @@ logger = logging.getLogger(__name__)
 _CONFIG_FOR_DOC = "LlamaConfig"
 
 
+def quant_error(pre_quant, post_quant):
+    error = (pre_quant - post_quant).pow(2).mean().sqrt()
+    error_norm = error / pre_quant.pow(2).mean().sqrt()
+    return error_norm
+
 class QuantLlamaAttention(nn.Module):
     """Multi-headed attention from 'Attention Is All You Need' paper"""
 
-    def __init__(self, config: LlamaConfig, quant_config: QuantConfig):
+    def __init__(self, config: LlamaConfig, quant_config: QuantConfig, layer_idx: int):
         super().__init__()
         self.config = config
         self.attention_dropout = config.attention_dropout
@@ -31,6 +36,7 @@ class QuantLlamaAttention(nn.Module):
         self.max_position_embeddings = config.max_position_embeddings
         self.rope_theta = config.rope_theta
         self.is_causal = True
+        self.layer_idx = layer_idx
 
         # KV-cache quantization config
         self.quant_config = quant_config
@@ -148,6 +154,8 @@ class QuantLlamaAttention(nn.Module):
                     value_states_quant_int, value_states_quant_scale = v_quant_function(
                         value_states_quant, self.quant_config
                     ) 
+                    # with open('/home/yc2367/llm/P2-LLM/wkvaq_quant/results/k_error.txt', 'a') as f:
+                    #     print(f'Layer {self.layer_idx:<3} key error: {quant_error(key_states_pre_quant, key_states_quant)}', file=f)
                 else:
                     key_states_quant = None
                     value_states_quant_int = None
@@ -483,13 +491,22 @@ class QuantLlamaAttention(nn.Module):
                         f"Wrong key_states_float_len !"
                 
                 ######################################## Q x K.T ########################################
-                if key_states_quant is None:
-                    key_states_full = key_states_float
+                # Fuse query quantization with per-channel key smoothing
+                if self.apply_k_scale and (not self.apply_k_bias):
+                    query_states_scaled = query_states * repeat_kv(key_quant_scale, self.num_key_value_groups)
                 else:
-                    key_states_full = torch.cat([key_states_quant, key_states_float], dim=2)
+                    query_states_scaled = query_states
+                query_states_quant = q_quant_function(query_states_scaled, self.quant_config)
 
-                key_states_full = repeat_kv(key_states_full, self.num_key_value_groups)
-                attn_weights = torch.matmul(query_states, key_states_full.transpose(2, 3)) / math.sqrt(self.head_dim)
+                if key_states_quant is None:
+                    attn_weights_quant = None
+                    attn_weights_float = torch.matmul(query_states, repeat_kv(key_states_float, self.num_key_value_groups).transpose(2, 3)) / math.sqrt(self.head_dim)
+                    attn_weights = attn_weights_float
+                else:
+                    attn_weights_quant = torch.matmul(query_states_quant, repeat_kv(key_states_quant, self.num_key_value_groups).transpose(2, 3)) / math.sqrt(self.head_dim)
+                    attn_weights_float = torch.matmul(query_states, repeat_kv(key_states_float, self.num_key_value_groups).transpose(2, 3)) / math.sqrt(self.head_dim)
+                    attn_weights = torch.cat([attn_weights_quant, attn_weights_float], dim=-1)
+                    
                 if attn_weights.size() != (bsz, self.num_heads, q_len, kv_seq_len):
                     raise ValueError(
                         f"Attention weights should be of size {(bsz, self.num_heads, q_len, kv_seq_len)}, but is"
@@ -558,7 +575,7 @@ class QuantLlamaAttention(nn.Module):
 
 
 class QuantLlamaMLP(nn.Module):
-    def __init__(self, config, quant_config):
+    def __init__(self, config: LlamaConfig, quant_config: QuantConfig, layer_idx: int):
         super().__init__()
         self.config = config
         self.hidden_size = config.hidden_size
@@ -567,6 +584,7 @@ class QuantLlamaMLP(nn.Module):
         self.up_proj = nn.Linear(self.hidden_size, self.intermediate_size, bias=config.mlp_bias)
         self.down_proj = nn.Linear(self.intermediate_size, self.hidden_size, bias=config.mlp_bias)
         self.act_fn = ACT2FN[config.hidden_act]
+        self.layer_idx = layer_idx
 
         #NOTE (Yuzong): quantization config
         self.quant_config = quant_config
@@ -602,13 +620,14 @@ class QuantLlamaMLP(nn.Module):
 
 
 class LlamaDecoderLayer(nn.Module):
-    def __init__(self, config: LlamaConfig, quant_config: QuantConfig):
+    def __init__(self, config: LlamaConfig, quant_config: QuantConfig, layer_idx: int):
         super().__init__()
         self.hidden_size = config.hidden_size
-        self.self_attn = QuantLlamaAttention(config=config, quant_config=quant_config)
-        self.mlp = QuantLlamaMLP(config=config, quant_config=quant_config)
+        self.self_attn = QuantLlamaAttention(config=config, quant_config=quant_config, layer_idx=layer_idx)
+        self.mlp = QuantLlamaMLP(config=config, quant_config=quant_config, layer_idx=layer_idx)
         self.input_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
         self.post_attention_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+        self.layer_idx = layer_idx
 
     def forward(
         self,
@@ -684,7 +703,7 @@ class QuantLlamaModel(LlamaPreTrainedModel):
         self.vocab_size = config.vocab_size
 
         self.embed_tokens = nn.Embedding(config.vocab_size, config.hidden_size, self.padding_idx)
-        self.layers = nn.ModuleList([LlamaDecoderLayer(config, quant_config) for _ in range(config.num_hidden_layers)])
+        self.layers = nn.ModuleList([LlamaDecoderLayer(config, quant_config, layer_idx=layer_idx) for layer_idx in range(config.num_hidden_layers)])
 
         self._use_flash_attention_2 = config._attn_implementation == "flash_attention_2"
         self.norm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
