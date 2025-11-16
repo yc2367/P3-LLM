@@ -237,7 +237,7 @@ def v_quant_per_token(
         return x_fp, torch.ones((batch, num_head, seq_len, 1), dtype=x_fp.dtype, device=x_fp.device)
 
     x_fp_new = (
-        x_fp.permute(0, 2, 1, 3).view(batch, seq_len, num_head * h_dim)
+        x_fp.permute(0, 2, 1, 3).reshape(batch, seq_len, num_head * h_dim)
     )
 
     num_groups = (num_head * h_dim) // group_size
