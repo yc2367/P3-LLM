@@ -1,4 +1,7 @@
 # P3-LLM: Efficient Mixed-Precisioin & Mixed-Format W4A8KV4 LLM Quantization
+[![arXiv](https://img.shields.io/badge/arXiv-<INDEX>-<COLOR>.svg)](https://arxiv.org/abs/2511.06838)
+
+Implementation of mixed-precision W4A8KV4 quantization in [P3-LLM](https://arxiv.org/abs/2511.06838). Our W4A8KV4 quantization outperforms state-of-the-art W4A8KV4 quantization algorithms such as [QuaRot](https://arxiv.org/abs/2404.00456) and [QoQ](https://arxiv.org/abs/2405.04532). Furthermore, we perform 8-bit query and attention-score quantization using FP8-E4M3 and custom unsigned FP8-E4M4 data formats, respectively. This allows both linear layers and attention modules to be accelerated by low-precision arithmetic units.
 
 ## 1. Getting Started
 Clone the repository and its 3rd-party submodules, including AWQ and LM-Evaluation-Harness.
